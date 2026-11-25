@@ -9,18 +9,29 @@ from fastapi.staticfiles import StaticFiles
 from .config import settings
 from .database import Base, SessionLocal, engine
 from .models import User
-from .routers import auth, cases, graph, identity, patterns, snapshots, sources, tools
+from .routers import (
+    auth,
+    cases,
+    coverage,
+    graph,
+    identity,
+    patterns,
+    snapshots,
+    sources,
+    tools,
+)
 
-app = FastAPI(title=settings.APP_NAME, version="1.0.0",
+app = FastAPI(title=settings.APP_NAME, version="1.1.0",
               description="来源账 / 身份解析 / 受限图扩展 / 模式求值 / 反证编排 / "
-                          "案件投影 / 快照复演")
+                          "案件投影 / 快照复演 / 患者用药覆盖日历")
 
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_credentials=False,
     allow_methods=["*"], allow_headers=["*"])
 
 for r in (auth.router, sources.router, identity.router, graph.router,
-          patterns.router, cases.router, snapshots.router, tools.router):
+          patterns.router, cases.router, snapshots.router, tools.router,
+          coverage.router):
     app.include_router(r)
 
 
@@ -39,6 +50,9 @@ def startup():
             run_seed(reset=False)
     finally:
         db.close()
+    # 覆盖日历样例独立幂等补播：老数据卷升级后也能获得新表样例
+    from .coverage_demo import ensure_coverage_demo
+    ensure_coverage_demo()
 
 
 # 单镜像部署：若前端已构建，则托管 dist（hash 路由，无需 SPA history fallback）

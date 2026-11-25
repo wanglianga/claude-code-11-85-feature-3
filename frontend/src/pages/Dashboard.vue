@@ -61,11 +61,14 @@
                  description="表面重复由调拨单 TR4 + 串户红冲更正解释，进销存闭环；重叠边置 negated，不再用于扩展。" />
         <el-step title="P5 申诉确认退回（C-004，关闭）"
                  description="APP1 申诉成立、退货验收单 TH-0318 与 return_in 台账印证，案件 closed_returned。" />
+        <el-step title="患者级用药覆盖日历（COV-S1~S4，双路线核验）"
+                 description="从处方剂量版本、实际发药量、住院区间、停药/退货与等效关系推导每日可用量：30片1/日→2/日+住院4日+退6片核验覆盖至第21日；区分可归责真实超量(10天)、跨方剩余库存/未匹配退货的口径未定，且同成分不同剂型库存不相加。独立核查层，不写案件定性。" />
         <el-step title="扩展场景"
                  description="C-005 拆方、C-006 集中结算、C-007 异常转诊（¥88,200 高金额跨机构扩展门槛）、C-008 慢病协作不命中。" />
       </el-steps>
       <div class="flex gap8 mt12">
         <el-button @click="$router.push('/patterns')">前往模式排序</el-button>
+        <el-button type="primary" plain @click="$router.push('/coverage')">用药覆盖日历</el-button>
         <el-button @click="$router.push('/explorer?case=C-001')">在图扩展中查看 P1</el-button>
         <el-button @click="$router.push('/snapshots')">快照复演 / 触发变更</el-button>
       </div>

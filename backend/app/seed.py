@@ -601,6 +601,11 @@ def run_seed(reset: bool = True):
         seed_central(db)
         seed_referral(db)
         seed_pattern_configs(db)
+
+        # 患者级用药覆盖日历样例（独立表，不依赖图/案件结果）
+        from .coverage_demo import seed_coverage_demo
+        seed_coverage_demo(db)
+
         db.commit()
 
         # 1) 身份簇 v1

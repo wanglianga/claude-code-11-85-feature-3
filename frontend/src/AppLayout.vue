@@ -16,6 +16,7 @@
         <el-menu-item index="/explorer"><el-icon><Share /></el-icon><span>受限图扩展</span></el-menu-item>
         <el-menu-item index="/patterns"><el-icon><MagicStick /></el-icon><span>模式与排序</span></el-menu-item>
         <el-menu-item index="/counter"><el-icon><Search /></el-icon><span>反证联查</span></el-menu-item>
+        <el-menu-item index="/coverage"><el-icon><Calendar /></el-icon><span>用药覆盖日历</span></el-menu-item>
         <el-menu-item index="/cases"><el-icon><FolderOpened /></el-icon><span>案件投影</span></el-menu-item>
         <el-menu-item index="/snapshots"><el-icon><Camera /></el-icon><span>快照复演</span></el-menu-item>
       </el-menu>

@@ -519,3 +519,153 @@ class ModelRun(Base):
     weights: Mapped[dict] = mapped_column(JSONB, default=dict)
     calibration: Mapped[dict] = mapped_column(JSONB, default=dict)
     note: Mapped[str] = mapped_column(Text)
+
+
+# ---------------------------------------------------------------- 患者用药覆盖日历
+class MedEquivGroup(Base):
+    """药品等效组：同有效成分、且剂型/换算口径可合并库存的药品归为一组。
+
+    注意：同成分但不同剂型类别（普通片/控缓释片/胶囊/口服液/注射剂等）
+    不进入同一库存池，由 MedDrug.form_class 区分，禁止仅按 ingredient 相加。
+    """
+    __tablename__ = "med_equiv_group"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(48), unique=True, index=True)  # EQ-AML
+    name: Mapped[str] = mapped_column(String(128))
+    ingredient: Mapped[str] = mapped_column(String(128), index=True)
+    # 规定日剂量的计量单位（最小单位，如 片 / ml / IU）
+    dose_unit: Mapped[str] = mapped_column(String(16), default="片")
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class MedDrugCatalog(Base):
+    """药品目录到等效组的映射，含剂型类别与规格换算系数。"""
+    __tablename__ = "med_drug_catalog"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(48), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(160))
+    group_code: Mapped[str] = mapped_column(String(48), index=True)
+    ingredient: Mapped[str] = mapped_column(String(128), index=True)
+    dosage_form: Mapped[str] = mapped_column(String(64))           # 原始剂型文案
+    # 库存池剂型类别：tablet_immediate / tablet_extended / capsule /
+    # orally_disintegrating / oral_liquid / injection ...
+    form_class: Mapped[str] = mapped_column(String(40), index=True)
+    spec: Mapped[str] = mapped_column(String(64))
+    # 1 个最小发药单位 = unit_factor 个标准计量单位（同池内换算）
+    unit_factor: Mapped[float] = mapped_column(Float, default=1.0)
+    # same_form_equiv=同剂型可互换；diff_form_separate=同成分不同剂型不并库存
+    equivalence_kind: Mapped[str] = mapped_column(String(24), default="same_form_equiv")
+    source_id: Mapped[int | None] = mapped_column(
+        ForeignKey("source_record.id"), nullable=True)
+
+
+class MedDoseVersion(Base):
+    """处方剂量版本：某患者某库存池在 [start_date, end_date] 内的规定日剂量。"""
+    __tablename__ = "med_dose_version"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(48), unique=True)
+    person_code: Mapped[str] = mapped_column(String(32), index=True)
+    group_code: Mapped[str] = mapped_column(String(48), index=True)
+    form_class: Mapped[str] = mapped_column(String(40), index=True)
+    rx_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    daily_dose: Mapped[float] = mapped_column(Float)   # 标准计量单位/日
+    start_date: Mapped[datetime] = mapped_column(Date, index=True)
+    end_date: Mapped[datetime | None] = mapped_column(Date, nullable=True)
+    certainty: Mapped[str] = mapped_column(String(16), default="certain")  # certain/estimated
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("source_record.id"))
+
+
+class MedDispense(Base):
+    """实际发药/结算行（患者实际拿到的数量）。"""
+    __tablename__ = "med_dispense"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(48), unique=True)
+    person_code: Mapped[str] = mapped_column(String(32), index=True)
+    group_code: Mapped[str] = mapped_column(String(48), index=True)
+    form_class: Mapped[str] = mapped_column(String(40), index=True)
+    drug_code: Mapped[str] = mapped_column(String(48))
+    qty: Mapped[float] = mapped_column(Float)          # 发药最小单位数
+    unit_factor: Mapped[float] = mapped_column(Float, default=1.0)
+    qty_base: Mapped[float] = mapped_column(Float)     # 折算标准计量单位
+    dispense_date: Mapped[datetime] = mapped_column(Date, index=True)
+    settle_code: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    pharmacy_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("source_record.id"))
+
+
+class MedReturn(Base):
+    """患者退药：归还/核减患者侧可用库存（与药店 return_in 台账方向相反视角）。"""
+    __tablename__ = "med_return"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(48), unique=True)
+    person_code: Mapped[str] = mapped_column(String(32), index=True)
+    group_code: Mapped[str] = mapped_column(String(48), index=True)
+    form_class: Mapped[str] = mapped_column(String(40), index=True)
+    qty_base: Mapped[float] = mapped_column(Float)
+    return_date: Mapped[datetime] = mapped_column(Date, index=True)
+    # 可关联到具体发药行；None=来源存在但原发行无法匹配，归属未定
+    dispense_code: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    match_status: Mapped[str] = mapped_column(String(16), default="linked")  # linked/unlinked
+    source_id: Mapped[int] = mapped_column(ForeignKey("source_record.id"))
+
+
+class MedStay(Base):
+    """住院区间：期间门诊同池药品按医嘱暂停（住院用药由医院供给），不消耗门诊库存。"""
+    __tablename__ = "med_stay"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(48), unique=True)
+    person_code: Mapped[str] = mapped_column(String(32), index=True)
+    from_date: Mapped[datetime] = mapped_column(Date, index=True)
+    to_date: Mapped[datetime] = mapped_column(Date, index=True)  # 含首尾
+    # "*" 表示暂停该患者全部门诊口服药；否则限定 group_code
+    scope_group: Mapped[str] = mapped_column(String(48), default="*")
+    org_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("source_record.id"))
+
+
+class MedStop(Base):
+    """停药记录：自 stop_date 起该池规定日剂量置 0，直到出现更新的剂量版本。"""
+    __tablename__ = "med_stop"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(48), unique=True)
+    person_code: Mapped[str] = mapped_column(String(32), index=True)
+    group_code: Mapped[str] = mapped_column(String(48), index=True)
+    form_class: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    stop_date: Mapped[datetime] = mapped_column(Date, index=True)
+    # certain=有停药医嘱；suspected=仅推断/待核（漏记停药敏感性）
+    certainty: Mapped[str] = mapped_column(String(16), default="certain")
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("source_record.id"))
+
+
+class CoverageScenario(Base):
+    """覆盖日历演示剧本（一个患者 + 30 日窗 + 关注池）。"""
+    __tablename__ = "coverage_scenario"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(48), unique=True, index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    person_code: Mapped[str] = mapped_column(String(32), index=True)
+    window_start: Mapped[datetime] = mapped_column(Date)
+    days: Mapped[int] = mapped_column(Integer, default=30)
+    focus_group: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    focus_form_class: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    tags: Mapped[list] = mapped_column(JSONB, default=list)
+    description: Mapped[str] = mapped_column(Text)
+    # 播种时冻结的核验要点（期望数值），供 /api/coverage/verify 对照
+    expected: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+
+class CoverageRun(Base):
+    """一次覆盖日历复算留档：参数 + 完整结果（含每笔来源天数贡献）。"""
+    __tablename__ = "coverage_run"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_code: Mapped[str] = mapped_column(String(48), unique=True, index=True)
+    scenario_code: Mapped[str | None] = mapped_column(String(48), nullable=True, index=True)
+    person_code: Mapped[str] = mapped_column(String(32), index=True)
+    window_start: Mapped[datetime] = mapped_column(Date)
+    days: Mapped[int] = mapped_column(Integer, default=30)
+    author: Mapped[str] = mapped_column(String(64), default="system")
+    params: Mapped[dict] = mapped_column(JSONB, default=dict)
+    result: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
